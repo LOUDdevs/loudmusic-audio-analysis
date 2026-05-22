@@ -1,7 +1,8 @@
 'use client';
 
 import { FormEvent, useMemo, useState } from 'react';
-import type { AnalysisResult } from '@/lib/analysis';
+import { buildDemoAudioAnalysis, buildDemoSpotifyAnalysis, type AnalysisResult } from '@/lib/analysis';
+import { parseSpotifyTrackId } from '@/lib/spotify';
 
 type Mode = 'audio' | 'spotify';
 
@@ -28,35 +29,30 @@ export default function Home() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append('file', file);
-    await runAnalysis('/api/analyze/audio', { method: 'POST', body: formData });
+    setLoading(true);
+    setError('');
+    setResult(null);
+    window.setTimeout(() => {
+      setResult(buildDemoAudioAnalysis(file.name, file.size, file.type));
+      setLoading(false);
+    }, 650);
   }
 
   async function submitSpotify(event: FormEvent) {
     event.preventDefault();
-    await runAnalysis('/api/analyze/spotify', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ spotifyUrl }),
-    });
-  }
+    const trackId = parseSpotifyTrackId(spotifyUrl);
+    if (!trackId) {
+      setError('Paste a valid Spotify track URL.');
+      return;
+    }
 
-  async function runAnalysis(url: string, init: RequestInit) {
     setLoading(true);
     setError('');
     setResult(null);
-
-    try {
-      const response = await fetch(url, init);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Analysis failed.');
-      setResult(payload);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed.');
-    } finally {
+    window.setTimeout(() => {
+      setResult(buildDemoSpotifyAnalysis(trackId));
       setLoading(false);
-    }
+    }, 650);
   }
 
   return (

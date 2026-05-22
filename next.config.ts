@@ -2,7 +2,8 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   typedRoutes: true,
-  output: 'standalone',
+  output: 'export',
+  basePath: process.env.GITHUB_ACTIONS ? '/loudmusic-audio-analysis' : undefined,
 };
 
 export default nextConfig;
