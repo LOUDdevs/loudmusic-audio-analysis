@@ -2,13 +2,24 @@
 
 import { FormEvent, useState } from 'react';
 import { buildDemoAudioAnalysis, buildDemoSpotifyAnalysis, type AnalysisResult } from '@/lib/analysis';
-import { parseSpotifyTrackId } from '@/lib/spotify';
+import { parseSpotifyTrackId, parseSpotifyArtistId } from '@/lib/spotify';
 
 type View = 'tracks' | 'artists';
 type TrackMode = 'audio' | 'spotify';
 
 const demoSpotifyUrl = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC';
 const demoArtistUrl = 'https://open.spotify.com/artist/2nWo31Kvu9rMSVfhuUVUw3';
+
+interface ArtistResult {
+  name: string;
+  artistId: string;
+  genres: string[];
+  monthlyListeners: string;
+  topTracks: string[];
+  summary: string;
+  mood: string;
+  energy: number;
+}
 
 export default function LoudmusicAnalyzer() {
   const [view, setView] = useState<View>('tracks');
@@ -23,7 +34,7 @@ export default function LoudmusicAnalyzer() {
 
   // Artists state
   const [artistUrl, setArtistUrl] = useState('');
-  const [artistResult, setArtistResult] = useState<any>(null);
+  const [artistResult, setArtistResult] = useState<ArtistResult | null>(null);
   const [artistError, setArtistError] = useState('');
   const [artistLoading, setArtistLoading] = useState(false);
 
@@ -58,40 +69,70 @@ export default function LoudmusicAnalyzer() {
     }, 650);
   }
 
+  function generateDemoArtistResult(artistId: string): ArtistResult {
+    const artistMap: Record<string, ArtistResult> = {
+      '2nWo31Kvu9rMSVfhuUVUw3': {
+        name: 'The Weeknd',
+        artistId,
+        genres: ['R&B', 'Pop', 'Alternative'],
+        monthlyListeners: '112.4M',
+        topTracks: ['Blinding Lights', 'Save Your Tears', 'Starboy', 'Die For You'],
+        summary: 'The Weeknd blends dark, cinematic R&B with massive pop hooks. His music consistently performs across global streaming, sync, and cultural moments.',
+        mood: 'Dark & Atmospheric',
+        energy: 78,
+      },
+      '6eUKZXaKkcviH0Ku9w2n3V': {
+        name: 'Ed Sheeran',
+        artistId,
+        genres: ['Pop', 'Singer-Songwriter'],
+        monthlyListeners: '84.7M',
+        topTracks: ['Shape of You', 'Perfect', 'Thinking Out Loud'],
+        summary: 'Ed Sheeran delivers intimate, guitar-driven pop with massive commercial reach. Strong sync and playlist performance across territories.',
+        mood: 'Warm & Relatable',
+        energy: 65,
+      },
+    };
+
+    return artistMap[artistId] || {
+      name: 'Artist Profile',
+      artistId,
+      genres: ['Electronic', 'Pop'],
+      monthlyListeners: '42.3M',
+      topTracks: ['Lead Single', 'Breakout Track', 'Deep Cut'],
+      summary: 'This artist shows strong streaming momentum with distinctive production and growing audience engagement across platforms.',
+      mood: 'Energetic',
+      energy: 82,
+    };
+  }
+
   async function submitArtist(event: FormEvent) {
     event.preventDefault();
-    if (!artistUrl.trim()) {
-      setArtistError('Please paste a Spotify artist URL.');
+    const artistId = parseSpotifyArtistId(artistUrl);
+    if (!artistId) {
+      setArtistError('Please paste a valid Spotify artist URL.');
       return;
     }
+
     setArtistLoading(true);
     setArtistError('');
     setArtistResult(null);
 
-    // Demo simulation for now
     window.setTimeout(() => {
-      setArtistResult({
-        name: 'The Weeknd',
-        spotifyUrl: artistUrl,
-        genres: ['R&B', 'Pop', 'Alternative'],
-        monthlyListeners: '112.4M',
-        topTracks: ['Blinding Lights', 'Save Your Tears', 'Starboy'],
-        summary: 'The Weeknd continues to dominate global streaming with a signature blend of dark R&B, atmospheric production, and cinematic songwriting.',
-      });
+      const demoResult = generateDemoArtistResult(artistId);
+      setArtistResult(demoResult);
       setArtistLoading(false);
-    }, 900);
+    }, 850);
   }
 
   return (
     <main className="shell">
-      {/* Header with Navigation */}
+      {/* Header */}
       <header className="site-header">
         <div className="header-inner">
           <div className="logo">
             <span className="logo-mark">🎵</span>
             <span className="logo-text">LOUDmusic</span>
           </div>
-
           <nav className="main-nav">
             <button
               className={view === 'tracks' ? 'nav-link active' : 'nav-link'}
@@ -109,33 +150,31 @@ export default function LoudmusicAnalyzer() {
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero */}
       <section className="hero">
         <div className="eyebrow">LOUDmusic Intelligence MVP</div>
-        <h1>{view === 'tracks' ? 'Track Analysis' : 'Artist Analysis'}</h1>
+        <h1>{view === 'tracks' ? 'Track Analysis' : 'Artist Intelligence'}</h1>
         <p>
           {view === 'tracks'
-            ? 'Upload audio or analyze a Spotify track, then turn Spotify + Chartmetric intelligence into campaign direction.'
-            : 'Paste any Spotify artist profile to generate deep audience, style, and campaign insights.'}
+            ? 'Upload audio or analyze a Spotify track. Turn metadata and audience signals into actionable campaign direction.'
+            : 'Analyze any Spotify artist profile. Understand style, audience, momentum, and campaign fit.'}
         </p>
       </section>
 
-      {/* Main Analyzer Section */}
+      {/* Analyzer */}
       <section id="analyzer" className="panel analyzer">
         {view === 'tracks' ? (
           <>
-            <div className="tabs" role="tablist" aria-label="Track analysis mode">
+            <div className="tabs" role="tablist">
               <button
                 className={trackMode === 'audio' ? 'active' : ''}
                 onClick={() => setTrackMode('audio')}
-                type="button"
               >
                 Upload audio
               </button>
               <button
                 className={trackMode === 'spotify' ? 'active' : ''}
                 onClick={() => setTrackMode('spotify')}
-                type="button"
               >
                 Spotify track
               </button>
@@ -149,7 +188,7 @@ export default function LoudmusicAnalyzer() {
                   <input
                     accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/flac,audio/x-flac"
                     type="file"
-                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                   />
                 </label>
                 <button disabled={loading} className="submit" type="submit">
@@ -162,7 +201,7 @@ export default function LoudmusicAnalyzer() {
                   <span>Spotify track URL</span>
                   <input
                     value={spotifyUrl}
-                    onChange={(event) => setSpotifyUrl(event.target.value)}
+                    onChange={(e) => setSpotifyUrl(e.target.value)}
                     placeholder={demoSpotifyUrl}
                   />
                 </label>
@@ -172,56 +211,79 @@ export default function LoudmusicAnalyzer() {
               </form>
             )}
 
-            {error ? <p className="error">{error}</p> : null}
-
+            {error && <p className="error">{error}</p>}
             {result ? <Results result={result} /> : <EmptyState />}
           </>
         ) : (
           /* Artists View */
-          <div className="artist-analysis">
-            <div className="upload-card">
-              <div className="upload-icon">🎤</div>
-              <div className="upload-title">Paste artist Spotify URL</div>
-              <div className="upload-description">
-                Spotify artist profile • Enter URL and click Analyze
+          <div className="artist-view">
+            <div className="artist-input-card">
+              <div className="card-header">
+                <div className="icon">🎤</div>
+                <div>
+                  <h3>Analyze Artist</h3>
+                  <p>Paste a Spotify artist profile URL</p>
+                </div>
               </div>
 
-              <form onSubmit={submitArtist} className="ata-artist-form">
+              <form onSubmit={submitArtist} className="artist-form">
                 <input
                   type="text"
                   value={artistUrl}
                   onChange={(e) => setArtistUrl(e.target.value)}
                   placeholder={demoArtistUrl}
-                  className="url-input"
+                  className="artist-input"
                 />
-                <button type="submit" disabled={artistLoading} className="submit-button">
-                  {artistLoading ? 'Analyzing…' : '✨ Analyze Artist'}
+                <button type="submit" disabled={artistLoading} className="submit">
+                  {artistLoading ? 'Analyzing…' : 'Analyze Artist'}
                 </button>
               </form>
             </div>
 
-            {artistError && <div className="ata-error">{artistError}</div>}
+            {artistError && <p className="error">{artistError}</p>}
 
             {artistLoading && (
-              <div className="loading-section">
-                <div className="loading-title">Analyzing Artist Profile</div>
-                <div className="loading-text">Fetching artist data from Spotify + Chartmetric…</div>
+              <div className="loading-state">
+                <div className="spinner" />
+                <p>Fetching artist profile, top tracks, and audience data…</p>
               </div>
             )}
 
             {artistResult && (
-              <div className="artist-result">
-                <h2>{artistResult.name}</h2>
-                <p className="artist-meta">
-                  {artistResult.monthlyListeners} monthly listeners • {artistResult.genres.join(', ')}
-                </p>
+              <div className="artist-result-panel">
+                <div className="result-header">
+                  <div>
+                    <span className="eyebrow">Spotify Artist</span>
+                    <h2>{artistResult.name}</h2>
+                    <div className="meta">
+                      {artistResult.monthlyListeners} monthly listeners • {artistResult.genres.join(' • ')}
+                    </div>
+                  </div>
+                  <div className="mood-pill">{artistResult.mood}</div>
+                </div>
+
                 <p className="summary">{artistResult.summary}</p>
 
+                <div className="stats-grid">
+                  <div className="stat">
+                    <div className="label">Energy</div>
+                    <div className="value">{artistResult.energy}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="label">Top Tracks</div>
+                    <div className="value small">{artistResult.topTracks.length}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="label">Genres</div>
+                    <div className="value small">{artistResult.genres.length}</div>
+                  </div>
+                </div>
+
                 <div className="top-tracks">
-                  <h3>Top Tracks</h3>
+                  <h4>Top Tracks</h4>
                   <ul>
-                    {artistResult.topTracks.map((track: string, i: number) => (
-                      <li key={i}>{track}</li>
+                    {artistResult.topTracks.map((track, index) => (
+                      <li key={index}>{track}</li>
                     ))}
                   </ul>
                 </div>
@@ -234,7 +296,7 @@ export default function LoudmusicAnalyzer() {
   );
 }
 
-// Reusable components
+// Shared components
 function EmptyState() {
   return (
     <section className="grid">
@@ -263,7 +325,9 @@ function Results({ result }: { result: AnalysisResult }) {
           <h2>{result.track.title}</h2>
           <p>{result.track.artist}</p>
         </div>
-        {result.file ? <div className="filePill">{result.file.mimeType || 'audio'} · {result.file.sizeMb}</div> : null}
+        {result.file && (
+          <div className="filePill">{result.file.mimeType || 'audio'} · {result.file.sizeMb}</div>
+        )}
       </div>
 
       <p className="summary">{result.summary}</p>
@@ -279,17 +343,13 @@ function Results({ result }: { result: AnalysisResult }) {
       </div>
 
       <div className="tagList">
-        {result.tags.map((tag) => (
-          <span key={tag}>{tag}</span>
-        ))}
+        {result.tags.map((tag) => <span key={tag}>{tag}</span>)}
       </div>
 
       <div className="recommendations">
         <h3>Campaign recommendations</h3>
         <ol>
-          {result.recommendations.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
+          {result.recommendations.map((item) => <li key={item}>{item}</li>)}
         </ol>
       </div>
     </section>
