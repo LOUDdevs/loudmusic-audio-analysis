@@ -23,8 +23,6 @@ export interface AnalysisResult {
   enrichment: {
     spotify: boolean;
     chartmetric: boolean;
-    soundcharts: boolean;
-    social: boolean;
   };
 }
 
@@ -61,8 +59,6 @@ export function buildDemoAudioAnalysis(filename: string, bytes: number, mimeType
     enrichment: {
       spotify: false,
       chartmetric: false,
-      soundcharts: false,
-      social: false,
     },
   };
 }
@@ -76,8 +72,8 @@ export function buildDemoSpotifyAnalysis(trackId: string): AnalysisResult {
       externalId: trackId,
     },
     summary:
-      'Demo-mode Spotify analysis. Add Spotify/Chartmetric credentials to fetch real metadata, artist stats, and audience signals.',
-    tags: ['spotify-linked', 'metadata-ready', 'artist-intelligence', 'campaign-research'],
+      'Demo-mode Spotify analysis. Add Spotify and Chartmetric credentials to fetch real metadata, artist stats, audience signals, and social momentum.',
+    tags: ['spotify-linked', 'chartmetric-ready', 'artist-intelligence', 'campaign-research'],
     scores: {
       energy: 74,
       danceability: 82,
@@ -85,15 +81,13 @@ export function buildDemoSpotifyAnalysis(trackId: string): AnalysisResult {
       commercialFit: 77,
     },
     recommendations: [
-      'Use Spotify metadata as the base record, then enrich with Chartmetric and Soundcharts before campaign planning.',
-      'Compare follower velocity, playlist adds, and social footprint before selecting campaign tiers.',
-      'Create a one-page artist profile for outreach and paid campaign targeting.',
+      'Use Spotify metadata as the base record, then enrich with Chartmetric audience, playlist, and social momentum data.',
+      'Compare follower velocity, listener geography, top social content, and playlist adds before selecting campaign tiers.',
+      'Create a one-page artist profile for outreach and paid campaign targeting using Chartmetric as the primary intelligence source.',
     ],
     enrichment: {
       spotify: true,
       chartmetric: false,
-      soundcharts: false,
-      social: false,
     },
   };
 }

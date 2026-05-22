@@ -11,11 +11,13 @@ describe('demo analysis builders', () => {
     expect(result.file?.sizeMb).toBe('11.77 MB');
   });
 
-  it('creates a Spotify profile with the parsed track id', () => {
+  it('creates a Spotify profile with the parsed track id and Chartmetric-only enrichment model', () => {
     const result = buildDemoSpotifyAnalysis('4uLU6hMCjMI75M1A2tKUQC');
 
     expect(result.source).toBe('spotify');
     expect(result.track.externalId).toBe('4uLU6hMCjMI75M1A2tKUQC');
-    expect(result.enrichment.spotify).toBe(true);
+    expect(result.enrichment).toEqual({ spotify: true, chartmetric: false });
+    expect(result.recommendations.join(' ')).toContain('Chartmetric');
+    expect(result.recommendations.join(' ')).not.toContain('Soundcharts');
   });
 });

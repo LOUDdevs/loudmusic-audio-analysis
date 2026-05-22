@@ -17,9 +17,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   const statusCopy = useMemo(() => {
-    if (loading) return 'Analyzing signal, metadata, and campaign fit…';
+    if (loading) return 'Analyzing signal, Spotify metadata, Chartmetric audience data, and campaign fit…';
     if (result) return 'Analysis complete. Use this profile to plan the next campaign move.';
-    return 'Upload audio or paste a Spotify track to generate an artist-ready profile.';
+    return 'Upload audio or paste a Spotify track to generate an artist-ready profile powered by Spotify + Chartmetric.';
   }, [loading, result]);
 
   async function submitAudio(event: FormEvent) {
@@ -60,7 +60,7 @@ export default function Home() {
       <section className="hero">
         <div className="eyebrow">LOUDmusic Intelligence MVP</div>
         <h1>Audio Analysis</h1>
-        <p>Discover what makes a record move — upload audio or analyze a Spotify track, then turn the output into campaign direction.</p>
+        <p>Discover what makes a record move — upload audio or analyze a Spotify track, then turn Spotify + Chartmetric intelligence into campaign direction.</p>
         <div className="heroActions">
           <a href="#analyzer" className="primaryLink">Start analysis</a>
           <span>{statusCopy}</span>
@@ -104,7 +104,7 @@ function EmptyState() {
   return (
     <section className="grid">
       <InfoCard title="Audio profile" body="Tags, scores, and creative positioning for the record." />
-      <InfoCard title="Artist intelligence" body="Spotify metadata now, Chartmetric and social enrichment next." />
+      <InfoCard title="Artist intelligence" body="Spotify metadata now, Chartmetric audience and social momentum next." />
       <InfoCard title="Campaign direction" body="Practical recommendations for release, playlisting, and content strategy." />
     </section>
   );
