@@ -1,0 +1,15 @@
+services:
+  loudmusic-analysis-api:
+    build: .
+    container_name: loudmusic-analysis-api
+    restart: unless-stopped
+    ports:
+      - "8012:8000"
+    env_file:
+      - .env
+    environment:
+      PORT: "8000"
+      AUDIO_TAGGING_API_URL: "${AUDIO_TAGGING_API_URL:-http://host.docker.internal:8001}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-https://louddevs.github.io,http://localhost:3000,http://localhost:3001}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

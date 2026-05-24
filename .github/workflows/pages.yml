@@ -18,6 +18,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      NEXT_PUBLIC_LOUDMUSIC_API_URL: https://analysis-api.loudmusic.io
       AUDIO_TAGGING_API_URL: ${{ secrets.AUDIO_TAGGING_API_URL }}
       SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
       SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}

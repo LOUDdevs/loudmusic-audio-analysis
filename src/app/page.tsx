@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { buildDemoAudioAnalysis, buildDemoSpotifyAnalysis, type AnalysisResult } from '@/lib/analysis';
+import { type AnalysisResult } from '@/lib/analysis';
 import { parseSpotifyTrackId, parseSpotifyArtistId } from '@/lib/spotify';
 
 type View = 'tracks' | 'artists';
@@ -9,6 +9,23 @@ type TrackMode = 'audio' | 'spotify';
 
 const demoSpotifyUrl = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC';
 const demoArtistUrl = 'https://open.spotify.com/artist/2nWo31Kvu9rMSVfhuUVUw3';
+const apiBaseUrl = process.env.NEXT_PUBLIC_LOUDMUSIC_API_URL?.replace(/\/$/, '') ?? '';
+
+async function parseApiResponse<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = payload?.detail || payload?.error || `API request failed with ${response.status}`;
+    throw new Error(message);
+  }
+  return payload as T;
+}
+
+function requireApiBaseUrl(): string {
+  if (!apiBaseUrl) {
+    throw new Error('Live API is not configured yet. Set NEXT_PUBLIC_LOUDMUSIC_API_URL for this deployment.');
+  }
+  return apiBaseUrl;
+}
 
 interface ArtistResult {
   name: string;
@@ -47,10 +64,19 @@ export default function LoudmusicAnalyzer() {
     setLoading(true);
     setError('');
     setResult(null);
-    window.setTimeout(() => {
-      setResult(buildDemoAudioAnalysis(file.name, file.size, file.type));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`${requireApiBaseUrl()}/api/audio/analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+      setResult(await parseApiResponse<AnalysisResult>(response));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Audio analysis failed.');
+    } finally {
       setLoading(false);
-    }, 650);
+    }
   }
 
   async function submitSpotify(event: FormEvent) {
@@ -63,46 +89,18 @@ export default function LoudmusicAnalyzer() {
     setLoading(true);
     setError('');
     setResult(null);
-    window.setTimeout(() => {
-      setResult(buildDemoSpotifyAnalysis(trackId));
+    try {
+      const response = await fetch(`${requireApiBaseUrl()}/api/spotify/track`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spotify_url: spotifyUrl, spotify_id: trackId }),
+      });
+      setResult(await parseApiResponse<AnalysisResult>(response));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Spotify analysis failed.');
+    } finally {
       setLoading(false);
-    }, 650);
-  }
-
-  function generateDemoArtistResult(artistId: string): ArtistResult {
-    const artistMap: Record<string, ArtistResult> = {
-      '2nWo31Kvu9rMSVfhuUVUw3': {
-        name: 'The Weeknd',
-        artistId,
-        genres: ['R&B', 'Pop', 'Alternative'],
-        monthlyListeners: '112.4M',
-        topTracks: ['Blinding Lights', 'Save Your Tears', 'Starboy', 'Die For You'],
-        summary: 'The Weeknd blends dark, cinematic R&B with massive pop hooks. His music consistently performs across global streaming, sync, and cultural moments.',
-        mood: 'Dark & Atmospheric',
-        energy: 78,
-      },
-      '6eUKZXaKkcviH0Ku9w2n3V': {
-        name: 'Ed Sheeran',
-        artistId,
-        genres: ['Pop', 'Singer-Songwriter'],
-        monthlyListeners: '84.7M',
-        topTracks: ['Shape of You', 'Perfect', 'Thinking Out Loud'],
-        summary: 'Ed Sheeran delivers intimate, guitar-driven pop with massive commercial reach. Strong sync and playlist performance across territories.',
-        mood: 'Warm & Relatable',
-        energy: 65,
-      },
-    };
-
-    return artistMap[artistId] || {
-      name: 'Artist Profile',
-      artistId,
-      genres: ['Electronic', 'Pop'],
-      monthlyListeners: '42.3M',
-      topTracks: ['Lead Single', 'Breakout Track', 'Deep Cut'],
-      summary: 'This artist shows strong streaming momentum with distinctive production and growing audience engagement across platforms.',
-      mood: 'Energetic',
-      energy: 82,
-    };
+    }
   }
 
   async function submitArtist(event: FormEvent) {
@@ -117,11 +115,18 @@ export default function LoudmusicAnalyzer() {
     setArtistError('');
     setArtistResult(null);
 
-    window.setTimeout(() => {
-      const demoResult = generateDemoArtistResult(artistId);
-      setArtistResult(demoResult);
+    try {
+      const response = await fetch(`${requireApiBaseUrl()}/api/spotify/artist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spotify_url: artistUrl, spotify_id: artistId }),
+      });
+      setArtistResult(await parseApiResponse<ArtistResult>(response));
+    } catch (err) {
+      setArtistError(err instanceof Error ? err.message : 'Artist analysis failed.');
+    } finally {
       setArtistLoading(false);
-    }, 850);
+    }
   }
 
   return (
