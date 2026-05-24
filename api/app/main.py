@@ -257,6 +257,19 @@ def normalize_chartmetric_scores(meta: dict[str, Any], stats: Any, career: Any) 
     }
 
 
+def normalize_label_list(value: Any) -> list[str]:
+    items = value if isinstance(value, list) else []
+    labels: list[str] = []
+    for item in items:
+        if isinstance(item, str) and item.strip():
+            labels.append(item.strip())
+        elif isinstance(item, dict):
+            label = item.get("name") or item.get("label") or item.get("title") or item.get("value")
+            if isinstance(label, str) and label.strip():
+                labels.append(label.strip())
+    return labels
+
+
 def normalize_instagram_content(data: Any) -> dict[str, Any]:
     obj = data if isinstance(data, dict) else {}
     def item_summary(item: Any) -> dict[str, Any] | None:
@@ -309,8 +322,8 @@ async def chartmetric_enrich_artist(spotify_id: str | None = None, chartmetric_i
         "name": meta.get("name"),
         "imageUrl": meta.get("image_url") or meta.get("cover_url") or meta.get("image") or meta.get("picture"),
         "genres": genres,
-        "moods": meta.get("moods") if isinstance(meta.get("moods"), list) else [],
-        "activities": meta.get("activities") if isinstance(meta.get("activities"), list) else [],
+        "moods": normalize_label_list(meta.get("moods")),
+        "activities": normalize_label_list(meta.get("activities")),
         "country": meta.get("code2") or meta.get("country") or meta.get("country_code"),
         "city": meta.get("current_city") or meta.get("hometown_city"),
         "hometownCity": meta.get("hometown_city"),

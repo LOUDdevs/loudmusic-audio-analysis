@@ -122,6 +122,17 @@ function titleCase(value: string): string {
   return value.replace(/([A-Z])/g, ' $1').replace(/[_-]/g, ' ').replace(/^./, (char) => char.toUpperCase());
 }
 
+function labelFromValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (typeof value === 'number') return String(value);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const label = record.name ?? record.label ?? record.title ?? record.value;
+    if (typeof label === 'string' && label.trim()) return label;
+  }
+  return null;
+}
+
 export default function LoudmusicAnalyzer() {
   const [view, setView] = useState<View>('tracks');
 
@@ -394,8 +405,8 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
         {artistResult.country && <span>Country: {artistResult.country}</span>}
         {artistResult.careerStage && <span>Stage: {artistResult.careerStage}</span>}
         {artistResult.releaseYears?.[0] && <span>Latest release year: {artistResult.releaseYears[0]}</span>}
-        {artistResult.moods?.slice(0, 4).map((mood) => <span key={`mood-${mood}`}>{titleCase(mood)}</span>)}
-        {artistResult.activities?.slice(0, 4).map((activity) => <span key={`activity-${activity}`}>{titleCase(activity)}</span>)}
+        {artistResult.moods?.map(labelFromValue).filter((label): label is string => Boolean(label)).slice(0, 4).map((mood) => <span key={`mood-${mood}`}>{titleCase(mood)}</span>)}
+        {artistResult.activities?.map(labelFromValue).filter((label): label is string => Boolean(label)).slice(0, 4).map((activity) => <span key={`activity-${activity}`}>{titleCase(activity)}</span>)}
       </div>
 
       <div className="stats-grid">
