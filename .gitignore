@@ -7,3 +7,8 @@ coverage
 .DS_Store
 *.log
 tsconfig.tsbuildinfo
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
