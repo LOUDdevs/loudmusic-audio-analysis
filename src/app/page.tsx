@@ -27,23 +27,97 @@ function requireApiBaseUrl(): string {
   return apiBaseUrl;
 }
 
+interface ArtistTrack {
+  id?: string;
+  name: string;
+  artists?: string;
+  album?: string;
+  releaseDate?: string;
+  url?: string;
+  imageUrl?: string;
+  popularity?: number;
+  tempoBpm?: number;
+  energy?: number;
+  danceability?: number;
+  valence?: number;
+  acousticness?: number;
+}
+
+interface ArtistAlbum {
+  id?: string;
+  name?: string;
+  releaseDate?: string;
+  url?: string;
+  imageUrl?: string;
+  type?: string;
+  totalTracks?: number;
+}
+
 interface ArtistResult {
   name: string;
   artistId: string;
   genres: string[];
   monthlyListeners: string;
+  spotifyFollowers?: number;
+  spotifyPopularity?: number;
   topTracks: string[];
+  topTracksDetailed?: ArtistTrack[];
+  albums?: ArtistAlbum[];
+  chartmetricAlbums?: ArtistAlbum[];
+  releaseYears?: string[];
   summary: string;
   mood: string;
   energy: number;
+  audioProfile?: {
+    coverage?: number;
+    tempoBpm?: number | null;
+    energy?: number | null;
+    danceability?: number | null;
+    valence?: number | null;
+    acousticness?: number | null;
+    energyProfile?: string | null;
+    vibeDescription?: string | null;
+  };
   enrichment?: {
     spotify: boolean;
     chartmetric: boolean;
   };
   chartmetricId?: string;
   country?: string;
+  city?: string;
   careerStage?: string;
+  careerTrend?: string;
+  growthLevel?: string;
+  biography?: string;
+  recordLabel?: string;
+  team?: Record<string, string | null | undefined>;
   socialUrls?: Record<string, string>;
+  chartmetricScores?: Record<string, number | string | string[] | null | undefined>;
+  platformStats?: Record<string, number | string | null | undefined>;
+  moods?: string[];
+  activities?: string[];
+  socialContent?: {
+    topPosts?: Array<Record<string, string | number | null | undefined>>;
+    topReels?: Array<Record<string, string | number | null | undefined>>;
+  };
+}
+
+function formatCompact(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const numberValue = typeof value === 'string' ? Number(value) : value;
+  if (Number.isFinite(numberValue)) {
+    return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(numberValue as number);
+  }
+  return String(value);
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return `${Math.round(value <= 1 ? value * 100 : value)}%`;
+}
+
+function titleCase(value: string): string {
+  return value.replace(/([A-Z])/g, ' $1').replace(/[_-]/g, ' ').replace(/^./, (char) => char.toUpperCase());
 }
 
 export default function LoudmusicAnalyzer() {
@@ -262,54 +336,7 @@ export default function LoudmusicAnalyzer() {
               </div>
             )}
 
-            {artistResult && (
-              <div className="artist-result-panel">
-                <div className="result-header">
-                  <div>
-                    <span className="eyebrow">Spotify Artist</span>
-                    <h2>{artistResult.name}</h2>
-                    <div className="meta">
-                      {artistResult.monthlyListeners} monthly listeners • {artistResult.genres.join(' • ')}
-                    </div>
-                  </div>
-                  <div className="mood-pill">{artistResult.mood}</div>
-                </div>
-
-                <p className="summary">{artistResult.summary}</p>
-
-                <div className="tagList">
-                  <span>Spotify: {artistResult.enrichment?.spotify ? 'live' : 'not connected'}</span>
-                  <span>Chartmetric: {artistResult.enrichment?.chartmetric ? 'live' : 'pending'}</span>
-                  {artistResult.chartmetricId && <span>CM ID: {artistResult.chartmetricId}</span>}
-                  {artistResult.country && <span>Country: {artistResult.country}</span>}
-                  {artistResult.careerStage && <span>Stage: {artistResult.careerStage}</span>}
-                </div>
-
-                <div className="stats-grid">
-                  <div className="stat">
-                    <div className="label">Energy</div>
-                    <div className="value">{artistResult.energy}</div>
-                  </div>
-                  <div className="stat">
-                    <div className="label">Top Tracks</div>
-                    <div className="value small">{artistResult.topTracks.length}</div>
-                  </div>
-                  <div className="stat">
-                    <div className="label">Genres</div>
-                    <div className="value small">{artistResult.genres.length}</div>
-                  </div>
-                </div>
-
-                <div className="top-tracks">
-                  <h4>Top Tracks</h4>
-                  <ul>
-                    {artistResult.topTracks.map((track, index) => (
-                      <li key={index}>{track}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+            {artistResult && <ArtistResults artistResult={artistResult} />}
           </div>
         )}
       </section>
@@ -318,6 +345,148 @@ export default function LoudmusicAnalyzer() {
 }
 
 // Shared components
+function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
+  const audio = artistResult.audioProfile;
+  const catalog = artistResult.albums?.length ? artistResult.albums : artistResult.chartmetricAlbums || [];
+  const socials = Object.entries(artistResult.socialUrls || {});
+  const scoreRows = Object.entries(artistResult.chartmetricScores || {}).filter(([, value]) => value !== null && value !== undefined && !Array.isArray(value)).slice(0, 6);
+  const platformRows = Object.entries(artistResult.platformStats || {}).filter(([, value]) => typeof value === 'number' || typeof value === 'string').slice(0, 8);
+  const bioMeta = [
+    ['Location', [artistResult.city, artistResult.country].filter(Boolean).join(', ')],
+    ['Growth', artistResult.growthLevel],
+    ['Career trend', artistResult.careerTrend],
+    ['Record label', artistResult.recordLabel],
+    ...Object.entries(artistResult.team || {}).map(([key, value]) => [titleCase(key), value]),
+  ].filter(([, value]) => value);
+
+  return (
+    <div className="artist-result-panel">
+      <div className="result-header">
+        <div>
+          <span className="eyebrow">Artist Intelligence</span>
+          <h2>{artistResult.name}</h2>
+          <div className="meta">
+            {artistResult.monthlyListeners} • Popularity {artistResult.spotifyPopularity ?? artistResult.energy}/100
+            {artistResult.genres.length ? ` • ${artistResult.genres.join(' • ')}` : ''}
+          </div>
+        </div>
+        <div className="mood-pill">{artistResult.mood}</div>
+      </div>
+
+      <p className="summary">{artistResult.summary}</p>
+
+      <div className="tagList">
+        <span>Spotify: {artistResult.enrichment?.spotify ? 'live' : 'not connected'}</span>
+        <span>Chartmetric: {artistResult.enrichment?.chartmetric ? 'live' : 'pending'}</span>
+        {artistResult.chartmetricId && <span>CM ID: {artistResult.chartmetricId}</span>}
+        {artistResult.country && <span>Country: {artistResult.country}</span>}
+        {artistResult.careerStage && <span>Stage: {artistResult.careerStage}</span>}
+        {artistResult.releaseYears?.[0] && <span>Latest release year: {artistResult.releaseYears[0]}</span>}
+      </div>
+
+      <div className="stats-grid">
+        <Metric label="Spotify followers" value={formatCompact(artistResult.spotifyFollowers)} />
+        <Metric label="Popularity" value={`${artistResult.spotifyPopularity ?? artistResult.energy}/100`} />
+        <Metric label="Top tracks" value={artistResult.topTracksDetailed?.length || artistResult.topTracks.length} />
+        <Metric label="Catalog items" value={catalog.length} />
+        <Metric label="Avg tempo" value={audio?.tempoBpm ? `${Math.round(audio.tempoBpm)} BPM` : '—'} />
+        <Metric label="Danceability" value={formatPercent(audio?.danceability ?? null)} />
+        <Metric label="Energy" value={formatPercent(audio?.energy ?? null)} />
+        <Metric label="Mood" value={formatPercent(audio?.valence ?? null)} />
+      </div>
+
+      {audio?.vibeDescription && <p className="insight-note">{audio.vibeDescription} Audio profile coverage: {audio.coverage || 0} top tracks.</p>}
+
+      {(artistResult.biography || bioMeta.length > 0) && (
+        <section className="detail-section">
+          <h3>About this artist</h3>
+          {artistResult.biography && <p>{artistResult.biography}</p>}
+          {bioMeta.length > 0 && (
+            <div className="meta-grid">
+              {bioMeta.map(([label, value]) => <Metric key={String(label)} label={String(label)} value={String(value)} />)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {socials.length > 0 && (
+        <section className="detail-section">
+          <h3>Social & streaming profiles</h3>
+          <div className="link-grid">
+            {socials.map(([platform, url]) => <a key={platform} href={url} target="_blank" rel="noopener">{titleCase(platform)}</a>)}
+          </div>
+        </section>
+      )}
+
+      {(scoreRows.length > 0 || platformRows.length > 0) && (
+        <section className="detail-section">
+          <h3>Chartmetric platform intelligence</h3>
+          <div className="meta-grid">
+            {scoreRows.map(([label, value]) => <Metric key={label} label={titleCase(label)} value={formatCompact(value as number | string)} />)}
+            {platformRows.map(([label, value]) => <Metric key={label} label={titleCase(label)} value={formatCompact(value as number | string)} />)}
+          </div>
+        </section>
+      )}
+
+      {artistResult.topTracksDetailed && artistResult.topTracksDetailed.length > 0 && (
+        <section className="detail-section">
+          <h3>Top Songs</h3>
+          <div className="track-list-rich">
+            {artistResult.topTracksDetailed.slice(0, 10).map((track, index) => (
+              <a className="track-row" key={track.id || track.name} href={track.url} target="_blank" rel="noopener">
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{track.name}</strong>
+                  <small>{track.album || track.artists || 'Spotify track'}{track.releaseDate ? ` • ${track.releaseDate}` : ''}</small>
+                </div>
+                <em>{track.popularity ?? '—'}/100</em>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {catalog.length > 0 && (
+        <section className="detail-section">
+          <h3>Recent releases</h3>
+          <div className="album-grid">
+            {catalog.slice(0, 8).map((album, index) => (
+              <a className="album-card-mini" key={album.id || `${album.name}-${index}`} href={album.url} target="_blank" rel="noopener">
+                {album.imageUrl && <img src={album.imageUrl} alt="" />}
+                <strong>{album.name}</strong>
+                <small>{album.releaseDate || album.type || 'Release'}</small>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {((artistResult.socialContent?.topPosts?.length || 0) > 0 || (artistResult.socialContent?.topReels?.length || 0) > 0) && (
+        <section className="detail-section">
+          <h3>Top Instagram content</h3>
+          <div className="content-grid">
+            {[...(artistResult.socialContent?.topPosts || []), ...(artistResult.socialContent?.topReels || [])].slice(0, 6).map((post, index) => (
+              <a className="content-card" key={String(post.url || index)} href={String(post.url || '#')} target="_blank" rel="noopener">
+                <strong>{post.views ? `${formatCompact(post.views as number)} views` : post.likes ? `${formatCompact(post.likes as number)} likes` : 'Instagram post'}</strong>
+                <small>{String(post.caption || post.date || 'Chartmetric social signal').slice(0, 120)}</small>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="stat">
+      <div className="label">{label}</div>
+      <div className="value small">{value}</div>
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
     <section className="grid">

@@ -118,6 +118,13 @@ async def spotify_get(path: str) -> dict[str, Any]:
     return response.json()
 
 
+async def spotify_get_optional(path: str) -> dict[str, Any] | None:
+    try:
+        return await spotify_get(path)
+    except Exception:
+        return None
+
+
 async def chartmetric_token() -> str:
     if ChartmetricTokenCache.token and time.time() < ChartmetricTokenCache.expires_at - 60:
         return ChartmetricTokenCache.token
@@ -157,6 +164,13 @@ async def chartmetric_get(path: str, params: dict[str, Any] | None = None) -> An
     return payload.get("obj", payload)
 
 
+async def chartmetric_get_optional(path: str, params: dict[str, Any] | None = None) -> Any:
+    try:
+        return await chartmetric_get(path, params=params)
+    except Exception:
+        return None
+
+
 async def resolve_chartmetric_artist_id(spotify_id: str | None = None, chartmetric_id: str | int | None = None) -> str | None:
     if chartmetric_id:
         return str(chartmetric_id)
@@ -175,6 +189,28 @@ async def resolve_chartmetric_artist_id(spotify_id: str | None = None, chartmetr
 def normalize_chartmetric_urls(data: Any) -> dict[str, str]:
     items = data if isinstance(data, list) else []
     social: dict[str, str] = {}
+    aliases = {
+        "instagram": "instagram",
+        "twitter": "twitter",
+        "x": "twitter",
+        "tiktok": "tiktok",
+        "facebook": "facebook",
+        "youtube": "youtube",
+        "website": "website",
+        "homepage": "website",
+        "spotify": "spotify",
+        "soundcloud": "soundcloud",
+        "bandsintown": "bandsintown",
+        "wikipedia": "wikipedia",
+        "itunes": "appleMusic",
+        "apple": "appleMusic",
+        "deezer": "deezer",
+        "amazon": "amazonMusic",
+        "songkick": "songkick",
+        "genius": "genius",
+        "shazam": "shazam",
+        "lastfm": "lastfm",
+    }
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -183,19 +219,62 @@ def normalize_chartmetric_urls(data: Any) -> dict[str, str]:
         url = url_value[0] if isinstance(url_value, list) and url_value else url_value
         if not isinstance(url, str) or not url:
             continue
-        if "instagram" in domain:
-            social["instagram"] = url
-        elif domain in {"twitter", "x"} or "twitter" in domain:
-            social["twitter"] = url
-        elif "tiktok" in domain:
-            social["tiktok"] = url
-        elif "facebook" in domain:
-            social["facebook"] = url
-        elif "youtube" in domain:
-            social["youtube"] = url
-        elif "website" in domain or domain == "homepage":
-            social["website"] = url
+        for needle, key in aliases.items():
+            if needle in domain and key not in social:
+                social[key] = url
+                break
     return social
+
+
+def first_number(*values: Any) -> float | int | None:
+    for value in values:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                continue
+    return None
+
+
+def normalize_chartmetric_scores(meta: dict[str, Any], stats: Any, career: Any) -> dict[str, Any]:
+    cm_stats_raw = meta.get("cm_statistics")
+    cm_stats: dict[str, Any] = cm_stats_raw if isinstance(cm_stats_raw, dict) else {}
+    stats_obj = stats if isinstance(stats, dict) else {}
+    career_item = career[0] if isinstance(career, list) and career and isinstance(career[0], dict) else {}
+    score = first_number(meta.get("cm_artist_score"), meta.get("cm_artist_rank"), cm_stats.get("sp_followers"), stats_obj.get("cm_artist_score"), career_item.get("score"))
+    fanbase = first_number(cm_stats.get("sp_followers"), stats_obj.get("sp_followers"), stats_obj.get("spotify_followers"))
+    monthly = first_number(cm_stats.get("sp_monthly_listeners"), stats_obj.get("sp_monthly_listeners"), stats_obj.get("spotify_monthly_listeners"))
+    return {
+        "score": score,
+        "rank": first_number(meta.get("cm_artist_rank"), stats_obj.get("rank")),
+        "fanbaseScore": fanbase,
+        "monthlyListeners": monthly,
+        "followers": fanbase,
+        "trendingScore": first_number(stats_obj.get("trending_score"), stats_obj.get("trendingScore"), career_item.get("trending_score")),
+        "rawStatsKeys": sorted(stats_obj.keys())[:30],
+    }
+
+
+def normalize_instagram_content(data: Any) -> dict[str, Any]:
+    obj = data if isinstance(data, dict) else {}
+    def item_summary(item: Any) -> dict[str, Any] | None:
+        if not isinstance(item, dict):
+            return None
+        return {
+            "url": item.get("url") or item.get("permalink") or item.get("post_url"),
+            "caption": item.get("caption") or item.get("text") or item.get("description"),
+            "likes": first_number(item.get("likes"), item.get("like_count"), item.get("likes_count")),
+            "comments": first_number(item.get("comments"), item.get("comment_count"), item.get("comments_count")),
+            "views": first_number(item.get("views"), item.get("view_count"), item.get("plays")),
+            "date": item.get("date") or item.get("created_at") or item.get("timestamp"),
+            "thumbnailUrl": item.get("thumbnail") or item.get("thumbnail_url") or item.get("image_url"),
+        }
+    return {
+        "topPosts": [x for x in (item_summary(i) for i in obj.get("top_posts", [])[:6]) if x],
+        "topReels": [x for x in (item_summary(i) for i in obj.get("top_reels", [])[:6]) if x],
+    }
 
 
 async def chartmetric_enrich_artist(spotify_id: str | None = None, chartmetric_id: str | int | None = None) -> dict[str, Any] | None:
@@ -203,21 +282,55 @@ async def chartmetric_enrich_artist(spotify_id: str | None = None, chartmetric_i
     if not cm_id:
         return None
     metadata = await chartmetric_get(f"/api/artist/{cm_id}")
-    urls_payload = await chartmetric_get(f"/api/artist/{cm_id}/urls")
+    urls_payload = await chartmetric_get_optional(f"/api/artist/{cm_id}/urls")
+    stats_payload = await chartmetric_get_optional(f"/api/artist/{cm_id}/cmStats")
+    career_payload = await chartmetric_get_optional(f"/api/artist/{cm_id}/career", params={"limit": 1})
+    albums_payload = await chartmetric_get_optional(f"/api/artist/{cm_id}/albums", params={"limit": 12})
+    instagram_payload = await chartmetric_get_optional(f"/api/SNS/deepSocial/cm_artist/{cm_id}/instagram")
     meta = metadata if isinstance(metadata, dict) else {}
     social_urls = normalize_chartmetric_urls(urls_payload)
     raw_genres = meta.get("genres")
     genres = raw_genres if isinstance(raw_genres, list) else ([meta.get("genre")] if meta.get("genre") else [])
+    career_status = meta.get("career_status") if isinstance(meta.get("career_status"), dict) else {}
+    cm_stats = meta.get("cm_statistics") if isinstance(meta.get("cm_statistics"), dict) else {}
+    normalized_albums = []
+    album_items = albums_payload if isinstance(albums_payload, list) else []
+    for album in album_items[:12]:
+        if not isinstance(album, dict):
+            continue
+        normalized_albums.append({
+            "name": album.get("name") or album.get("album_name"),
+            "releaseDate": album.get("release_date") or album.get("releaseDate"),
+            "imageUrl": album.get("image_url") or album.get("cover_url"),
+            "url": album.get("url") or album.get("spotify_url"),
+        })
     return {
         "chartmetricId": cm_id,
         "name": meta.get("name"),
-        "imageUrl": meta.get("image_url") or meta.get("image") or meta.get("picture"),
+        "imageUrl": meta.get("image_url") or meta.get("cover_url") or meta.get("image") or meta.get("picture"),
         "genres": genres,
+        "moods": meta.get("moods") if isinstance(meta.get("moods"), list) else [],
+        "activities": meta.get("activities") if isinstance(meta.get("activities"), list) else [],
         "country": meta.get("code2") or meta.get("country") or meta.get("country_code"),
-        "careerStage": (meta.get("career_status") or {}).get("stage") if isinstance(meta.get("career_status"), dict) else meta.get("career_stage"),
+        "city": meta.get("current_city") or meta.get("hometown_city"),
+        "hometownCity": meta.get("hometown_city"),
+        "currentCity": meta.get("current_city"),
+        "careerStage": career_status.get("stage") or meta.get("career_stage"),
+        "careerTrend": career_status.get("trend") or meta.get("career_trend"),
+        "growthLevel": career_status.get("level") or meta.get("growth_level"),
+        "biography": meta.get("description") or meta.get("bio") or meta.get("biography"),
+        "recordLabel": meta.get("record_label"),
+        "bookingAgent": meta.get("booking_agent"),
+        "pressContact": meta.get("press_contact"),
+        "generalManager": meta.get("general_manager"),
+        "bandMembers": meta.get("band_members"),
         "socialUrls": social_urls,
+        "scores": normalize_chartmetric_scores(meta, stats_payload, career_payload),
+        "platformStats": cm_stats,
+        "albums": normalized_albums,
+        "instagram": normalize_instagram_content(instagram_payload),
         "enrichment": {"chartmetric": True},
-        "raw": {"metadata": metadata, "urls": urls_payload},
+        "raw": {"metadata": metadata, "urls": urls_payload, "stats": stats_payload, "career": career_payload, "albums": albums_payload, "instagram": instagram_payload},
     }
 
 
@@ -249,8 +362,26 @@ def merge_chartmetric_into_artist(result: dict[str, Any], chartmetric: dict[str,
     result["chartmetricId"] = chartmetric["chartmetricId"]
     result["socialUrls"] = chartmetric.get("socialUrls") or {}
     result["country"] = chartmetric.get("country")
+    result["city"] = chartmetric.get("city")
     result["careerStage"] = chartmetric.get("careerStage")
-    result["summary"] += f" Chartmetric matched ID {chartmetric['chartmetricId']} and added social/audience intelligence hooks."
+    result["careerTrend"] = chartmetric.get("careerTrend")
+    result["growthLevel"] = chartmetric.get("growthLevel")
+    result["biography"] = chartmetric.get("biography")
+    result["recordLabel"] = chartmetric.get("recordLabel")
+    result["team"] = {
+        "bookingAgent": chartmetric.get("bookingAgent"),
+        "pressContact": chartmetric.get("pressContact"),
+        "generalManager": chartmetric.get("generalManager"),
+        "bandMembers": chartmetric.get("bandMembers"),
+    }
+    result["chartmetricScores"] = chartmetric.get("scores") or {}
+    result["platformStats"] = chartmetric.get("platformStats") or {}
+    result["socialContent"] = chartmetric.get("instagram") or {"topPosts": [], "topReels": []}
+    if chartmetric.get("albums"):
+        result["chartmetricAlbums"] = chartmetric.get("albums")
+    result["moods"] = chartmetric.get("moods") or result.get("moods") or []
+    result["activities"] = chartmetric.get("activities") or []
+    result["summary"] += f" Chartmetric matched ID {chartmetric['chartmetricId']} and added profile, social links, career, and platform intelligence."
     result["raw"]["chartmetric"] = chartmetric.get("raw")
     return result
 
@@ -296,24 +427,85 @@ def track_analysis(track: dict[str, Any], artist: dict[str, Any] | None = None) 
     }
 
 
-def artist_result(artist: dict[str, Any], top_tracks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def normalize_album(album: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": album.get("id"),
+        "name": album.get("name"),
+        "releaseDate": album.get("release_date"),
+        "url": album.get("external_urls", {}).get("spotify"),
+        "imageUrl": image_url(album.get("images")),
+        "type": album.get("album_type"),
+        "totalTracks": album.get("total_tracks"),
+    }
+
+
+def normalize_top_track(track: dict[str, Any], audio_features: dict[str, Any] | None = None) -> dict[str, Any]:
+    features = audio_features or {}
+    return {
+        "id": track.get("id"),
+        "name": track.get("name"),
+        "artists": ", ".join(a.get("name", "") for a in track.get("artists", []) if a.get("name")),
+        "album": track.get("album", {}).get("name"),
+        "releaseDate": track.get("album", {}).get("release_date"),
+        "url": track.get("external_urls", {}).get("spotify"),
+        "imageUrl": image_url(track.get("album", {}).get("images")),
+        "popularity": track.get("popularity"),
+        "tempoBpm": features.get("tempo"),
+        "energy": features.get("energy"),
+        "danceability": features.get("danceability"),
+        "valence": features.get("valence"),
+        "acousticness": features.get("acousticness"),
+    }
+
+
+def summarize_audio_profile(tracks: list[dict[str, Any]]) -> dict[str, Any]:
+    fields = ["tempoBpm", "energy", "danceability", "valence", "acousticness"]
+    profile: dict[str, Any] = {"coverage": 0}
+    usable = [t for t in tracks if any(t.get(field) is not None for field in fields)]
+    profile["coverage"] = len(usable)
+    for field in fields:
+        values = [float(t[field]) for t in usable if t.get(field) is not None]
+        profile[field] = sum(values) / len(values) if values else None
+    energy = profile.get("energy")
+    tempo = profile.get("tempoBpm")
+    profile["energyProfile"] = "high" if isinstance(energy, (int, float)) and energy >= 0.6 else "moderate" if isinstance(energy, (int, float)) and energy >= 0.35 else "low" if energy is not None else None
+    profile["vibeDescription"] = f"Around {round(tempo)} BPM with {profile['energyProfile']} energy." if isinstance(tempo, (int, float)) and profile.get("energyProfile") else None
+    return profile
+
+
+def artist_result(artist: dict[str, Any], top_tracks: list[dict[str, Any]] | None = None, albums: list[dict[str, Any]] | None = None, audio_features: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     followers = artist.get("followers", {}).get("total") or 0
     popularity = int(artist.get("popularity") or 0)
     genres = artist.get("genres") or []
-    tracks = [t.get("name") for t in (top_tracks or []) if t.get("name")][:6]
+    detailed_tracks = []
+    for t in (top_tracks or []):
+        if not t.get("name"):
+            continue
+        tid = t.get("id")
+        detailed_tracks.append(normalize_top_track(t, (audio_features or {}).get(str(tid)) if tid else None))
+    tracks = [t["name"] for t in detailed_tracks if t.get("name")][:6]
+    normalized_albums = [normalize_album(a) for a in (albums or []) if isinstance(a, dict)][:12]
+    audio_profile = summarize_audio_profile(detailed_tracks)
+    release_years = sorted({str(a.get("releaseDate", ""))[:4] for a in normalized_albums if a.get("releaseDate")}, reverse=True)
     return {
         "name": artist.get("name") or "Spotify Artist",
         "artistId": artist.get("id"),
         "genres": genres,
         "monthlyListeners": f"{followers:,} Spotify followers",
+        "spotifyFollowers": followers,
+        "spotifyPopularity": popularity,
         "topTracks": tracks,
-        "summary": f"Live Spotify artist profile for {artist.get('name') or 'this artist'} with {followers:,} followers and popularity {popularity}/100. Chartmetric enrichment can add audience/social momentum once mapped.",
+        "topTracksDetailed": detailed_tracks,
+        "albums": normalized_albums,
+        "releaseYears": release_years,
+        "summary": f"Live Spotify artist profile for {artist.get('name') or 'this artist'} with {followers:,} followers and popularity {popularity}/100. Catalog and audio-profile fields are now included for campaign planning.",
         "mood": genres[0].title() if genres else "Live Spotify Profile",
         "energy": popularity,
+        "audioProfile": audio_profile,
         "spotifyUrl": artist.get("external_urls", {}).get("spotify"),
         "imageUrl": image_url(artist.get("images")),
         "enrichment": {"spotify": True, "chartmetric": False},
-        "raw": {"spotifyArtist": artist, "topTracks": top_tracks or []},
+        "raw": {"spotifyArtist": artist, "topTracks": top_tracks or [], "albums": albums or [], "audioFeatures": audio_features or {}},
     }
 
 
@@ -340,7 +532,15 @@ async def analyze_spotify_artist(ref: SpotifyRef) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Provide a valid Spotify artist URL or ID")
     artist = await spotify_get(f"/artists/{artist_id}")
     top_tracks_payload = await spotify_get(f"/artists/{artist_id}/top-tracks?market=US")
-    result = artist_result(artist, top_tracks_payload.get("tracks", []))
+    albums_payload = await spotify_get_optional(f"/artists/{artist_id}/albums?include_groups=album,single&market=US&limit=12") or {}
+    tracks = top_tracks_payload.get("tracks", [])
+    track_ids = [t.get("id") for t in tracks if t.get("id")]
+    audio_features: dict[str, dict[str, Any]] = {}
+    if track_ids:
+        features_payload = await spotify_get_optional(f"/audio-features?ids={','.join(track_ids[:100])}")
+        features = features_payload.get("audio_features", []) if isinstance(features_payload, dict) else []
+        audio_features = {str(f.get("id")): f for f in features if isinstance(f, dict) and f.get("id")}
+    result = artist_result(artist, tracks, albums_payload.get("items", []), audio_features)
     chartmetric = await safe_chartmetric_enrich_artist(spotify_id=artist_id)
     return merge_chartmetric_into_artist(result, chartmetric)
 
