@@ -20,4 +20,15 @@ describe('demo analysis builders', () => {
     expect(result.recommendations.join(' ')).toContain('Chartmetric');
     expect(result.recommendations.join(' ')).not.toContain('Soundcharts');
   });
+
+  it('exposes richer analysis containers for parity-plus UI rendering', () => {
+    const result = buildDemoSpotifyAnalysis('4uLU6hMCjMI75M1A2tKUQC');
+
+    expect(result.core).toBeUndefined();
+    expect(result.perceptual).toBeUndefined();
+    expect(result.topGenres).toBeUndefined();
+    expect(result.allTags).toBeUndefined();
+    expect(result.songAudience).toBeUndefined();
+    expect(result.playlistAudience).toBeUndefined();
+  });
 });

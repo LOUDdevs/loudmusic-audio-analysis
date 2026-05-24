@@ -343,9 +343,16 @@ h1 {
 .album-card-mini img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; margin-bottom: 10px; }
 .content-card { display: grid; gap: 6px; max-width: 320px; }
 .content-card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 12px; }
+.track-metrics-inline { display: block; margin-top: 4px; }
+.genre-chip-grid, .platform-card-grid, .timeline-grid, .trend-points { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.genre-chip, .platform-card, .timeline-item, .trend-point { border: 1px solid var(--line); border-radius: 16px; padding: 12px; background: rgba(255,255,255,0.04); }
+.genre-chip small, .platform-card small, .timeline-item small, .trend-point small { display: block; margin-top: 6px; color: var(--muted); }
+.platform-card span { display: block; font-size: 1.2rem; font-weight: 800; margin-top: 6px; }
+.trend-card { border: 1px solid var(--line); border-radius: 18px; padding: 14px; background: rgba(255,255,255,0.035); }
+.trend-sparkline { width: 100%; height: 80px; color: var(--accent-2); margin-bottom: 12px; }
 
 @media (max-width: 760px) {
-  .grid, .scoreGrid, .stats-grid, .meta-grid, .album-grid { grid-template-columns: 1fr; }
+  .grid, .scoreGrid, .stats-grid, .meta-grid, .album-grid, .genre-chip-grid, .platform-card-grid, .timeline-grid, .trend-points { grid-template-columns: 1fr; }
   .artist-form { grid-template-columns: 1fr; }
   .resultHeader, .result-header, .card-header { flex-direction: column; align-items: flex-start; }
   .artist-identity, .track-identity { align-items: flex-start; }

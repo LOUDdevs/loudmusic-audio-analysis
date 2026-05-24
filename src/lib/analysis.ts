@@ -1,5 +1,24 @@
 export type AnalysisSource = 'audio' | 'spotify';
 
+export interface ConfidenceTag {
+  name: string;
+  confidence?: number;
+}
+
+export interface AudienceSeriesPoint {
+  label?: string;
+  date?: string;
+  value: number;
+}
+
+export interface PlatformMetric {
+  platform: string;
+  value: number;
+  delta?: number | null;
+  deltaPercent?: number | null;
+  context?: string;
+}
+
 export interface AnalysisResult {
   source: AnalysisSource;
   track: {
@@ -24,6 +43,30 @@ export interface AnalysisResult {
     mood: number;
     commercialFit: number;
   };
+  core?: {
+    tempoBpm?: number | null;
+    key?: string | null;
+    scale?: string | null;
+    keyStrength?: number | null;
+    loudnessIntegrated?: number | null;
+    dynamicRange?: number | null;
+    energy?: number | null;
+    danceability?: number | null;
+  };
+  perceptual?: {
+    timbreBrightness?: number | null;
+    timbreWarmth?: number | null;
+    valence?: number | null;
+    acousticness?: number | null;
+  };
+  topGenres?: ConfidenceTag[];
+  allTags?: ConfidenceTag[];
+  songAudience?: {
+    items: AudienceSeriesPoint[];
+  };
+  playlistAudience?: {
+    items: AudienceSeriesPoint[];
+  };
   recommendations: string[];
   enrichment: {
     spotify: boolean;
@@ -34,6 +77,11 @@ export interface AnalysisResult {
     country?: string;
     careerStage?: string;
     socialUrls?: Record<string, string>;
+    scores?: Record<string, number | string | null | undefined>;
+    platformStats?: Record<string, number | string | null | undefined>;
+    popularityHistory?: AudienceSeriesPoint[];
+    followersPlatforms?: PlatformMetric[];
+    listenersPlatforms?: PlatformMetric[];
   };
 }
 

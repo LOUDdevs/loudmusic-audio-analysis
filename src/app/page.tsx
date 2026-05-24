@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { type AnalysisResult } from '@/lib/analysis';
+import { type AnalysisResult, type AudienceSeriesPoint, type ConfidenceTag, type PlatformMetric } from '@/lib/analysis';
 import { parseSpotifyTrackId, parseSpotifyArtistId } from '@/lib/spotify';
 
 type View = 'tracks' | 'artists';
@@ -98,6 +98,18 @@ interface ArtistResult {
   platformStats?: Record<string, number | string | null | undefined>;
   moods?: string[];
   activities?: string[];
+  tempoStd?: number | null;
+  curatorStrictness?: string | null;
+  allTags?: ConfidenceTag[];
+  topGenres?: ConfidenceTag[];
+  popularityHistory?: AudienceSeriesPoint[];
+  followersPlatforms?: PlatformMetric[];
+  listenersPlatforms?: PlatformMetric[];
+  releaseTimeline?: AudienceSeriesPoint[];
+  similarArtists?: Array<{ name?: string; url?: string; imageUrl?: string; image?: string }>;
+  events?: Array<Record<string, string | number | boolean | null | undefined>>;
+  radioSpins?: Array<Record<string, string | number | boolean | null | undefined>>;
+  topRadioStations?: Array<Record<string, string | number | boolean | null | undefined>>;
   socialContent?: {
     topPosts?: Array<Record<string, string | number | null | undefined>>;
     topReels?: Array<Record<string, string | number | null | undefined>>;
@@ -131,6 +143,41 @@ function labelFromValue(value: unknown): string | null {
     if (typeof label === 'string' && label.trim()) return label;
   }
   return null;
+}
+
+function formatSignedPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded > 0 ? '+' : ''}${rounded}%`;
+}
+
+function formatDateLabel(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatMetricContext(row: PlatformMetric): string {
+  const parts = [row.context, row.deltaPercent !== null && row.deltaPercent !== undefined ? `WoW ${formatSignedPercent(row.deltaPercent)}` : null];
+  return parts.filter(Boolean).join(' • ') || 'Platform metric';
+}
+
+function normalizeTopGenres(tags?: ConfidenceTag[]): ConfidenceTag[] {
+  return (tags || []).filter((tag) => tag.name).slice(0, 5);
+}
+
+function sparklinePoints(items: AudienceSeriesPoint[] | undefined): string {
+  const values = (items || []).map((item) => Number(item.value)).filter((value) => Number.isFinite(value));
+  if (!values.length) return '';
+  if (values.length === 1) return '32,32 128,32';
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return values.map((value, index) => {
+    const x = (index / (values.length - 1)) * 128;
+    const y = max === min ? 32 : 60 - (((value - min) / (max - min)) * 56);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
 }
 
 export default function LoudmusicAnalyzer() {
@@ -369,8 +416,15 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
     ['Growth', artistResult.growthLevel],
     ['Career trend', artistResult.careerTrend],
     ['Record label', artistResult.recordLabel],
+    ['Curator strictness', artistResult.curatorStrictness],
     ...Object.entries(artistResult.team || {}).map(([key, value]) => [titleCase(key), value]),
   ].filter(([, value]) => value);
+  const topGenres = normalizeTopGenres(artistResult.topGenres || artistResult.allTags);
+  const similarArtists = artistResult.similarArtists || [];
+  const events = artistResult.events || [];
+  const radioSpins = artistResult.radioSpins || [];
+  const topStations = artistResult.topRadioStations || [];
+  const releaseTimeline = artistResult.releaseTimeline || [];
 
   return (
     <div className="artist-result-panel">
@@ -411,16 +465,66 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
 
       <div className="stats-grid">
         <Metric label="Spotify followers" value={formatCompact(artistResult.spotifyFollowers)} />
+        <Metric label="Monthly listeners" value={artistResult.monthlyListeners || '—'} />
         <Metric label="Popularity" value={`${artistResult.spotifyPopularity ?? artistResult.energy}/100`} />
         <Metric label="Top tracks" value={artistResult.topTracksDetailed?.length || artistResult.topTracks.length} />
         <Metric label="Catalog items" value={catalog.length} />
         <Metric label="Avg tempo" value={audio?.tempoBpm ? `${Math.round(audio.tempoBpm)} BPM` : '—'} />
+        <Metric label="Tempo variability" value={artistResult.tempoStd ? `${Math.round(artistResult.tempoStd)} BPM` : '—'} />
         <Metric label="Danceability" value={formatPercent(audio?.danceability ?? null)} />
         <Metric label="Energy" value={formatPercent(audio?.energy ?? null)} />
-        <Metric label="Mood" value={formatPercent(audio?.valence ?? null)} />
+        <Metric label="Mood / positivity" value={formatPercent(audio?.valence ?? null)} />
+        <Metric label="Acousticness" value={formatPercent(audio?.acousticness ?? null)} />
       </div>
 
       {audio?.vibeDescription && <p className="insight-note">{audio.vibeDescription} Audio profile coverage: {audio.coverage || 0} top tracks.</p>}
+
+      {releaseTimeline.length > 0 && (
+        <section className="detail-section">
+          <h3>Release timeline</h3>
+          <div className="timeline-grid">
+            {releaseTimeline.slice(0, 8).map((point, index) => (
+              <div className="timeline-item" key={`${point.date || point.label || index}`}>
+                <strong>{point.label || 'Release'}</strong>
+                <small>{formatDateLabel(point.date)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {topGenres.length > 0 && (
+        <section className="detail-section">
+          <h3>Genre mix</h3>
+          <div className="genre-chip-grid">
+            {topGenres.map((tag) => (
+              <div className="genre-chip" key={tag.name}>
+                <strong>{titleCase(tag.name)}</strong>
+                <small>{tag.confidence !== undefined && tag.confidence !== null ? formatPercent(tag.confidence) : 'Live tag'}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(artistResult.popularityHistory?.length || 0) > 0 && (
+        <section className="detail-section">
+          <h3>Popularity history</h3>
+          <div className="trend-card">
+            <svg viewBox="0 0 128 64" className="trend-sparkline" aria-hidden="true">
+              <polyline fill="none" stroke="currentColor" strokeWidth="3" points={sparklinePoints(artistResult.popularityHistory)} />
+            </svg>
+            <div className="trend-points">
+              {artistResult.popularityHistory?.slice(-4).map((point, index) => (
+                <div className="trend-point" key={`${point.date || point.label || index}`}>
+                  <strong>{formatCompact(point.value)}</strong>
+                  <small>{formatDateLabel(point.date) || point.label || 'Point'}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {(artistResult.biography || bioMeta.length > 0) && (
         <section className="detail-section">
@@ -439,6 +543,36 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
           <h3>Social & streaming profiles</h3>
           <div className="link-grid">
             {socials.map(([platform, url]) => <a key={platform} href={url} target="_blank" rel="noopener">{titleCase(platform)}</a>)}
+          </div>
+        </section>
+      )}
+
+      {artistResult.followersPlatforms && artistResult.followersPlatforms.length > 0 && (
+        <section className="detail-section">
+          <h3>Follower platforms</h3>
+          <div className="platform-card-grid">
+            {artistResult.followersPlatforms.map((row) => (
+              <div className="platform-card" key={`followers-${row.platform}`}>
+                <strong>{row.platform}</strong>
+                <span>{formatCompact(row.value)}</span>
+                <small>{formatMetricContext(row)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {artistResult.listenersPlatforms && artistResult.listenersPlatforms.length > 0 && (
+        <section className="detail-section">
+          <h3>Listener platforms</h3>
+          <div className="platform-card-grid">
+            {artistResult.listenersPlatforms.map((row) => (
+              <div className="platform-card" key={`listeners-${row.platform}-${row.context}`}>
+                <strong>{row.platform}</strong>
+                <span>{formatCompact(row.value)}</span>
+                <small>{formatMetricContext(row)}</small>
+              </div>
+            ))}
           </div>
         </section>
       )}
@@ -464,6 +598,9 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
                 <div>
                   <strong>{track.name}</strong>
                   <small>{track.album || track.artists || 'Spotify track'}{track.releaseDate ? ` • ${track.releaseDate}` : ''}</small>
+                  <small className="track-metrics-inline">
+                    {[track.tempoBpm ? `${Math.round(track.tempoBpm)} BPM` : null, track.energy !== undefined ? `Energy ${formatPercent(track.energy)}` : null, track.danceability !== undefined ? `Dance ${formatPercent(track.danceability)}` : null, track.valence !== undefined ? `Mood ${formatPercent(track.valence)}` : null, track.acousticness !== undefined ? `Acoustic ${formatPercent(track.acousticness)}` : null].filter(Boolean).join(' • ')}
+                  </small>
                 </div>
                 <em>{track.popularity ?? '—'}/100</em>
               </a>
@@ -487,15 +624,87 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
         </section>
       )}
 
-      {((artistResult.socialContent?.topPosts?.length || 0) > 0 || (artistResult.socialContent?.topReels?.length || 0) > 0) && (
+      {(artistResult.socialContent?.topReels?.length || 0) > 0 && (
         <section className="detail-section">
-          <h3>Top Instagram content</h3>
+          <h3>Shorts & Reels</h3>
           <div className="content-grid">
-            {[...(artistResult.socialContent?.topPosts || []), ...(artistResult.socialContent?.topReels || [])].slice(0, 6).map((post, index) => (
-              <a className="content-card" key={String(post.url || index)} href={String(post.url || '#')} target="_blank" rel="noopener">
+            {(artistResult.socialContent?.topReels || []).slice(0, 6).map((post, index) => (
+              <a className="content-card" key={String(post.url || `reel-${index}`)} href={String(post.url || '#')} target="_blank" rel="noopener">
                 {post.thumbnailUrl && <img src={String(post.thumbnailUrl)} alt="" />}
-                <strong>{post.views ? `${formatCompact(post.views as number)} views` : post.likes ? `${formatCompact(post.likes as number)} likes` : 'Instagram post'}</strong>
+                <strong>{post.views ? `${formatCompact(post.views as number)} views` : 'Instagram reel'}</strong>
                 <small>{String(post.caption || post.date || 'Chartmetric social signal').slice(0, 120)}</small>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(artistResult.socialContent?.topPosts?.length || 0) > 0 && (
+        <section className="detail-section">
+          <h3>Top Instagram posts</h3>
+          <div className="content-grid">
+            {(artistResult.socialContent?.topPosts || []).slice(0, 6).map((post, index) => (
+              <a className="content-card" key={String(post.url || `post-${index}`)} href={String(post.url || '#')} target="_blank" rel="noopener">
+                {post.thumbnailUrl && <img src={String(post.thumbnailUrl)} alt="" />}
+                <strong>{post.likes ? `${formatCompact(post.likes as number)} likes` : 'Instagram post'}</strong>
+                <small>{String(post.caption || post.date || 'Chartmetric social signal').slice(0, 120)}</small>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {events.length > 0 && (
+        <section className="detail-section">
+          <h3>Events</h3>
+          <div className="timeline-grid">
+            {events.slice(0, 6).map((event, index) => (
+              <div className="timeline-item" key={`${String(event.name || event.date || index)}`}>
+                <strong>{String(event.name || 'Event')}</strong>
+                <small>{String(event.date || event.venue || 'Live event')}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {radioSpins.length > 0 && (
+        <section className="detail-section">
+          <h3>Radio spins</h3>
+          <div className="timeline-grid">
+            {radioSpins.slice(0, 6).map((spin, index) => (
+              <div className="timeline-item" key={`${String(spin.song || spin.station || index)}`}>
+                <strong>{String(spin.song || 'Radio spin')}</strong>
+                <small>{String(spin.station || spin.location || 'Station')}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {topStations.length > 0 && (
+        <section className="detail-section">
+          <h3>Top radio stations</h3>
+          <div className="timeline-grid">
+            {topStations.slice(0, 6).map((station, index) => (
+              <div className="timeline-item" key={`${String(station.name || station.station || index)}`}>
+                <strong>{String(station.name || station.station || 'Station')}</strong>
+                <small>{String(station.count || station.plays || station.location || 'Airplay')}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {similarArtists.length > 0 && (
+        <section className="detail-section">
+          <h3>Similar artists</h3>
+          <div className="album-grid">
+            {similarArtists.slice(0, 8).map((artist, index) => (
+              <a className="album-card-mini" key={`${artist.name || index}`} href={artist.url} target="_blank" rel="noopener">
+                {(artist.imageUrl || artist.image) && <img src={artist.imageUrl || artist.image} alt="" />}
+                <strong>{artist.name || 'Similar artist'}</strong>
+                <small>Spotify similarity</small>
               </a>
             ))}
           </div>
@@ -534,6 +743,40 @@ function InfoCard({ title, body }: { title: string; body: string }) {
 }
 
 function Results({ result }: { result: AnalysisResult }) {
+  const topGenres = normalizeTopGenres(result.topGenres || result.allTags);
+  const popularityHistory = result.chartmetric?.popularityHistory || result.songAudience?.items || [];
+  const followerPlatforms = result.chartmetric?.followersPlatforms || [];
+  const listenerPlatforms = result.chartmetric?.listenersPlatforms || [];
+
+  function downloadResult(format: 'json' | 'csv') {
+    const payload = format === 'json'
+      ? JSON.stringify(result, null, 2)
+      : [
+          ['field', 'value'],
+          ['title', result.track.title],
+          ['artist', result.track.artist],
+          ['album', result.track.album || ''],
+          ['releaseDate', result.track.releaseDate || ''],
+          ['popularity', result.track.popularity ?? ''],
+          ['tempoBpm', result.core?.tempoBpm ?? ''],
+          ['key', result.core?.key || ''],
+          ['loudnessIntegrated', result.core?.loudnessIntegrated ?? ''],
+          ['dynamicRange', result.core?.dynamicRange ?? ''],
+          ['energy', result.core?.energy ?? result.scores.energy],
+          ['danceability', result.core?.danceability ?? result.scores.danceability],
+          ['valence', result.perceptual?.valence ?? result.scores.mood],
+          ['acousticness', result.perceptual?.acousticness ?? ''],
+          ['tags', (result.allTags || []).map((tag) => `${tag.name}:${tag.confidence ?? ''}`).join('; ')],
+        ].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n');
+    const blob = new Blob([payload], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${(result.track.title || 'analysis').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${format}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <section className="panel results">
       <div className="resultHeader">
@@ -550,10 +793,14 @@ function Results({ result }: { result: AnalysisResult }) {
             )}
           </div>
         </div>
-        {result.track.spotifyUrl && <a className="profile-link" href={result.track.spotifyUrl} target="_blank" rel="noopener">Open Spotify</a>}
-        {result.file && (
-          <div className="filePill">{result.file.mimeType || 'audio'} · {result.file.sizeMb}</div>
-        )}
+        <div className="header-actions">
+          {result.track.spotifyUrl && <a className="profile-link" href={result.track.spotifyUrl} target="_blank" rel="noopener">Open Spotify</a>}
+          <button type="button" className="profile-link" onClick={() => downloadResult('json')}>Export JSON</button>
+          <button type="button" className="profile-link" onClick={() => downloadResult('csv')}>Export CSV</button>
+          {result.file && (
+            <div className="filePill">{result.file.mimeType || 'audio'} · {result.file.sizeMb}</div>
+          )}
+        </div>
       </div>
 
       <p className="summary">{result.summary}</p>
@@ -576,8 +823,123 @@ function Results({ result }: { result: AnalysisResult }) {
         ))}
       </div>
 
+      <div className="stats-grid">
+        <Metric label="Tempo" value={result.core?.tempoBpm ? `${Math.round(result.core.tempoBpm)} BPM` : '—'} />
+        <Metric label="Musical key" value={result.core?.key || '—'} />
+        <Metric label="Key confidence" value={formatPercent(result.core?.keyStrength ?? null)} />
+        <Metric label="Loudness" value={result.core?.loudnessIntegrated !== null && result.core?.loudnessIntegrated !== undefined ? `${Math.round(result.core.loudnessIntegrated)} LUFS` : '—'} />
+        <Metric label="Dynamic range" value={result.core?.dynamicRange !== null && result.core?.dynamicRange !== undefined ? `${Math.round(result.core.dynamicRange)} dB` : '—'} />
+        <Metric label="Energy" value={formatPercent(result.core?.energy ?? null)} />
+        <Metric label="Danceability" value={formatPercent(result.core?.danceability ?? null)} />
+        <Metric label="Mood / positivity" value={formatPercent(result.perceptual?.valence ?? null)} />
+        <Metric label="Acousticness" value={formatPercent(result.perceptual?.acousticness ?? null)} />
+        <Metric label="Brightness" value={result.perceptual?.timbreBrightness !== null && result.perceptual?.timbreBrightness !== undefined ? formatCompact(result.perceptual.timbreBrightness) : '—'} />
+        <Metric label="Warmth" value={result.perceptual?.timbreWarmth !== null && result.perceptual?.timbreWarmth !== undefined ? formatCompact(result.perceptual.timbreWarmth) : '—'} />
+      </div>
+
+      {topGenres.length > 0 && (
+        <section className="detail-section">
+          <h3>Top genres</h3>
+          <div className="genre-chip-grid">
+            {topGenres.map((tag) => (
+              <div className="genre-chip" key={tag.name}>
+                <strong>{titleCase(tag.name)}</strong>
+                <small>{tag.confidence !== undefined && tag.confidence !== null ? formatPercent(tag.confidence) : 'Live tag'}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {popularityHistory.length > 0 && (
+        <section className="detail-section">
+          <h3>Audience trend</h3>
+          <div className="trend-card">
+            <svg viewBox="0 0 128 64" className="trend-sparkline" aria-hidden="true">
+              <polyline fill="none" stroke="currentColor" strokeWidth="3" points={sparklinePoints(popularityHistory)} />
+            </svg>
+            <div className="trend-points">
+              {popularityHistory.slice(-4).map((point, index) => (
+                <div className="trend-point" key={`${point.date || point.label || index}`}>
+                  <strong>{formatCompact(point.value)}</strong>
+                  <small>{point.label || formatDateLabel(point.date)}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {(result.songAudience?.items?.length || 0) > 0 && (
+        <section className="detail-section">
+          <h3>Song audience over time</h3>
+          <div className="trend-card">
+            <svg viewBox="0 0 128 64" className="trend-sparkline" aria-hidden="true">
+              <polyline fill="none" stroke="currentColor" strokeWidth="3" points={sparklinePoints(result.songAudience?.items)} />
+            </svg>
+            <div className="trend-points">
+              {(result.songAudience?.items || []).slice(-4).map((point, index) => (
+                <div className="trend-point" key={`${point.date || point.label || index}`}>
+                  <strong>{formatCompact(point.value)}</strong>
+                  <small>{point.label || formatDateLabel(point.date)}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {(result.playlistAudience?.items?.length || 0) > 0 && (
+        <section className="detail-section">
+          <h3>Playlist audience over time</h3>
+          <div className="trend-card">
+            <svg viewBox="0 0 128 64" className="trend-sparkline" aria-hidden="true">
+              <polyline fill="none" stroke="currentColor" strokeWidth="3" points={sparklinePoints(result.playlistAudience?.items)} />
+            </svg>
+            <div className="trend-points">
+              {(result.playlistAudience?.items || []).slice(-4).map((point, index) => (
+                <div className="trend-point" key={`${point.date || point.label || index}`}>
+                  <strong>{formatCompact(point.value)}</strong>
+                  <small>{point.label || formatDateLabel(point.date)}</small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {followerPlatforms.length > 0 && (
+        <section className="detail-section">
+          <h3>Follower platforms</h3>
+          <div className="platform-card-grid">
+            {followerPlatforms.map((row) => (
+              <div className="platform-card" key={`track-followers-${row.platform}`}>
+                <strong>{row.platform}</strong>
+                <span>{formatCompact(row.value)}</span>
+                <small>{formatMetricContext(row)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {listenerPlatforms.length > 0 && (
+        <section className="detail-section">
+          <h3>Listener platforms</h3>
+          <div className="platform-card-grid">
+            {listenerPlatforms.map((row) => (
+              <div className="platform-card" key={`track-listeners-${row.platform}-${row.context}`}>
+                <strong>{row.platform}</strong>
+                <span>{formatCompact(row.value)}</span>
+                <small>{formatMetricContext(row)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="tagList">
-        {result.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        {(result.allTags || []).map((tag) => <span key={tag.name}>{tag.name}{tag.confidence !== undefined && tag.confidence !== null ? ` (${formatPercent(tag.confidence)})` : ''}</span>)}
       </div>
 
       <div className="recommendations">
