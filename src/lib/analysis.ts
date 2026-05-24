@@ -24,6 +24,12 @@ export interface AnalysisResult {
     spotify: boolean;
     chartmetric: boolean;
   };
+  chartmetric?: {
+    chartmetricId?: string;
+    country?: string;
+    careerStage?: string;
+    socialUrls?: Record<string, string>;
+  };
 }
 
 function formatBytes(bytes: number): string {

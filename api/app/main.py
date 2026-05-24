@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 SPOTIFY_TRACK_RE = re.compile(r"spotify:track:([A-Za-z0-9]{22})|open\.spotify\.com/(?:intl-[a-z]{2}/)?track/([A-Za-z0-9]{22})|^([A-Za-z0-9]{22})$")
 SPOTIFY_ARTIST_RE = re.compile(r"spotify:artist:([A-Za-z0-9]{22})|open\.spotify\.com/(?:intl-[a-z]{2}/)?artist/([A-Za-z0-9]{22})|^([A-Za-z0-9]{22})$")
@@ -25,6 +25,12 @@ class SpotifyRef(BaseModel):
     spotify_id: str | None = None
 
 
+class ChartmetricArtistRef(BaseModel):
+    spotify_url: str | None = None
+    spotify_id: str | None = None
+    chartmetric_id: str | int | None = None
+
+
 class Health(BaseModel):
     status: str
     service: str
@@ -38,7 +44,12 @@ class SpotifyTokenCache:
     expires_at: float = 0
 
 
-app = FastAPI(title="LOUDmusic Analysis API", version="0.1.0")
+class ChartmetricTokenCache:
+    token: str | None = None
+    expires_at: float = 0
+
+
+app = FastAPI(title="LOUDmusic Analysis API", version="0.2.0")
 
 allowed_origins_env = env("ALLOWED_ORIGINS", "https://louddevs.github.io,http://localhost:3000") or ""
 allowed_origins = [x.strip() for x in allowed_origins_env.split(",") if x.strip()]
@@ -105,6 +116,143 @@ async def spotify_get(path: str) -> dict[str, Any]:
     if response.status_code >= 400:
         raise HTTPException(status_code=502, detail=f"Spotify API error: {response.status_code}")
     return response.json()
+
+
+async def chartmetric_token() -> str:
+    if ChartmetricTokenCache.token and time.time() < ChartmetricTokenCache.expires_at - 60:
+        return ChartmetricTokenCache.token
+
+    refresh_token = env("CHARTMETRIC_REFRESH_TOKEN") or env("CHARTMETRIC_LIVE_API_KEY")
+    if not refresh_token:
+        raise HTTPException(status_code=500, detail="Chartmetric refresh token is not configured")
+
+    base_url = (env("CHARTMETRIC_BASE_URL", "https://api.chartmetric.com") or "https://api.chartmetric.com").rstrip("/")
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            f"{base_url}/api/token",
+            json={"refreshtoken": refresh_token},
+            headers={"Content-Type": "application/json"},
+        )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"Chartmetric authentication failed: {response.status_code}")
+    payload = response.json().get("obj") or response.json()
+    token = payload.get("token") or payload.get("access_token")
+    if not token:
+        raise HTTPException(status_code=502, detail="Chartmetric did not return an access token")
+    ChartmetricTokenCache.token = token
+    ChartmetricTokenCache.expires_at = time.time() + int(payload.get("expires_in", 3600))
+    return str(token)
+
+
+async def chartmetric_get(path: str, params: dict[str, Any] | None = None) -> Any:
+    token = await chartmetric_token()
+    base_url = (env("CHARTMETRIC_BASE_URL", "https://api.chartmetric.com") or "https://api.chartmetric.com").rstrip("/")
+    async with httpx.AsyncClient(timeout=25) as client:
+        response = await client.get(f"{base_url}{path}", params=params, headers={"Authorization": f"Bearer {token}"})
+    if response.status_code == 404:
+        return None
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"Chartmetric API error: {response.status_code}")
+    payload = response.json()
+    return payload.get("obj", payload)
+
+
+async def resolve_chartmetric_artist_id(spotify_id: str | None = None, chartmetric_id: str | int | None = None) -> str | None:
+    if chartmetric_id:
+        return str(chartmetric_id)
+    if not spotify_id:
+        return None
+    data = await chartmetric_get(f"/api/artist/spotify/{spotify_id}/get-ids", params={"aggregate": "true"})
+    first = data[0] if isinstance(data, list) and data else data
+    if not isinstance(first, dict):
+        return None
+    cm_id = first.get("chartmetric_id") or first.get("cm_artist") or first.get("cmid") or first.get("id")
+    if isinstance(cm_id, list):
+        cm_id = cm_id[0] if cm_id else None
+    return str(cm_id) if cm_id else None
+
+
+def normalize_chartmetric_urls(data: Any) -> dict[str, str]:
+    items = data if isinstance(data, list) else []
+    social: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        domain = str(item.get("domain") or item.get("name") or "").lower()
+        url_value = item.get("url")
+        url = url_value[0] if isinstance(url_value, list) and url_value else url_value
+        if not isinstance(url, str) or not url:
+            continue
+        if "instagram" in domain:
+            social["instagram"] = url
+        elif domain in {"twitter", "x"} or "twitter" in domain:
+            social["twitter"] = url
+        elif "tiktok" in domain:
+            social["tiktok"] = url
+        elif "facebook" in domain:
+            social["facebook"] = url
+        elif "youtube" in domain:
+            social["youtube"] = url
+        elif "website" in domain or domain == "homepage":
+            social["website"] = url
+    return social
+
+
+async def chartmetric_enrich_artist(spotify_id: str | None = None, chartmetric_id: str | int | None = None) -> dict[str, Any] | None:
+    cm_id = await resolve_chartmetric_artist_id(spotify_id=spotify_id, chartmetric_id=chartmetric_id)
+    if not cm_id:
+        return None
+    metadata = await chartmetric_get(f"/api/artist/{cm_id}")
+    urls_payload = await chartmetric_get(f"/api/artist/{cm_id}/urls")
+    meta = metadata if isinstance(metadata, dict) else {}
+    social_urls = normalize_chartmetric_urls(urls_payload)
+    raw_genres = meta.get("genres")
+    genres = raw_genres if isinstance(raw_genres, list) else ([meta.get("genre")] if meta.get("genre") else [])
+    return {
+        "chartmetricId": cm_id,
+        "name": meta.get("name"),
+        "imageUrl": meta.get("image_url") or meta.get("image") or meta.get("picture"),
+        "genres": genres,
+        "country": meta.get("code2") or meta.get("country") or meta.get("country_code"),
+        "careerStage": (meta.get("career_status") or {}).get("stage") if isinstance(meta.get("career_status"), dict) else meta.get("career_stage"),
+        "socialUrls": social_urls,
+        "enrichment": {"chartmetric": True},
+        "raw": {"metadata": metadata, "urls": urls_payload},
+    }
+
+
+async def safe_chartmetric_enrich_artist(spotify_id: str | None = None, chartmetric_id: str | int | None = None) -> dict[str, Any] | None:
+    try:
+        return await chartmetric_enrich_artist(spotify_id=spotify_id, chartmetric_id=chartmetric_id)
+    except HTTPException:
+        return None
+    except Exception:
+        return None
+
+
+def merge_chartmetric_into_track(result: dict[str, Any], chartmetric: dict[str, Any] | None) -> dict[str, Any]:
+    if not chartmetric:
+        return result
+    result["enrichment"]["chartmetric"] = True
+    result["chartmetric"] = {k: v for k, v in chartmetric.items() if k != "raw"}
+    result["tags"] = list(dict.fromkeys(result["tags"] + ["chartmetric-enriched", "audience-intelligence"]))
+    result["summary"] += f" Chartmetric matched artist ID {chartmetric['chartmetricId']}, enabling audience and social intelligence for campaign planning."
+    result["recommendations"][2] = "Use Chartmetric social links, country, career stage, and audience data to sharpen platform-specific campaign targeting."
+    result["raw"]["chartmetric"] = chartmetric.get("raw")
+    return result
+
+
+def merge_chartmetric_into_artist(result: dict[str, Any], chartmetric: dict[str, Any] | None) -> dict[str, Any]:
+    if not chartmetric:
+        return result
+    result["enrichment"]["chartmetric"] = True
+    result["chartmetricId"] = chartmetric["chartmetricId"]
+    result["socialUrls"] = chartmetric.get("socialUrls") or {}
+    result["country"] = chartmetric.get("country")
+    result["careerStage"] = chartmetric.get("careerStage")
+    result["summary"] += f" Chartmetric matched ID {chartmetric['chartmetricId']} and added social/audience intelligence hooks."
+    result["raw"]["chartmetric"] = chartmetric.get("raw")
+    return result
 
 
 def image_url(images: list[dict[str, Any]] | None) -> str | None:
@@ -178,7 +326,11 @@ async def analyze_spotify_track(ref: SpotifyRef) -> dict[str, Any]:
     artist = None
     if track.get("artists"):
         artist = await spotify_get(f"/artists/{track['artists'][0]['id']}")
-    return track_analysis(track, artist)
+    result = track_analysis(track, artist)
+    chartmetric = None
+    if track.get("artists"):
+        chartmetric = await safe_chartmetric_enrich_artist(spotify_id=track["artists"][0]["id"])
+    return merge_chartmetric_into_track(result, chartmetric)
 
 
 @app.post("/api/spotify/artist")
@@ -188,7 +340,18 @@ async def analyze_spotify_artist(ref: SpotifyRef) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Provide a valid Spotify artist URL or ID")
     artist = await spotify_get(f"/artists/{artist_id}")
     top_tracks_payload = await spotify_get(f"/artists/{artist_id}/top-tracks?market=US")
-    return artist_result(artist, top_tracks_payload.get("tracks", []))
+    result = artist_result(artist, top_tracks_payload.get("tracks", []))
+    chartmetric = await safe_chartmetric_enrich_artist(spotify_id=artist_id)
+    return merge_chartmetric_into_artist(result, chartmetric)
+
+
+@app.post("/api/chartmetric/artist")
+async def analyze_chartmetric_artist(ref: ChartmetricArtistRef) -> dict[str, Any]:
+    spotify_id = extract_id(ref.spotify_id or ref.spotify_url, "artist") if (ref.spotify_id or ref.spotify_url) else None
+    chartmetric = await chartmetric_enrich_artist(spotify_id=spotify_id, chartmetric_id=ref.chartmetric_id)
+    if not chartmetric:
+        raise HTTPException(status_code=404, detail="No Chartmetric artist match found")
+    return chartmetric
 
 
 @app.post("/api/audio/analyze")

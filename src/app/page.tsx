@@ -36,6 +36,14 @@ interface ArtistResult {
   summary: string;
   mood: string;
   energy: number;
+  enrichment?: {
+    spotify: boolean;
+    chartmetric: boolean;
+  };
+  chartmetricId?: string;
+  country?: string;
+  careerStage?: string;
+  socialUrls?: Record<string, string>;
 }
 
 export default function LoudmusicAnalyzer() {
@@ -269,6 +277,14 @@ export default function LoudmusicAnalyzer() {
 
                 <p className="summary">{artistResult.summary}</p>
 
+                <div className="tagList">
+                  <span>Spotify: {artistResult.enrichment?.spotify ? 'live' : 'not connected'}</span>
+                  <span>Chartmetric: {artistResult.enrichment?.chartmetric ? 'live' : 'pending'}</span>
+                  {artistResult.chartmetricId && <span>CM ID: {artistResult.chartmetricId}</span>}
+                  {artistResult.country && <span>Country: {artistResult.country}</span>}
+                  {artistResult.careerStage && <span>Stage: {artistResult.careerStage}</span>}
+                </div>
+
                 <div className="stats-grid">
                   <div className="stat">
                     <div className="label">Energy</div>
@@ -336,6 +352,14 @@ function Results({ result }: { result: AnalysisResult }) {
       </div>
 
       <p className="summary">{result.summary}</p>
+
+      <div className="tagList">
+        <span>Spotify: {result.enrichment.spotify ? 'live' : 'not connected'}</span>
+        <span>Chartmetric: {result.enrichment.chartmetric ? 'live' : 'pending'}</span>
+        {result.chartmetric?.chartmetricId && <span>CM ID: {result.chartmetric.chartmetricId}</span>}
+        {result.chartmetric?.country && <span>Country: {result.chartmetric.country}</span>}
+        {result.chartmetric?.careerStage && <span>Stage: {result.chartmetric.careerStage}</span>}
+      </div>
 
       <div className="scoreGrid">
         {Object.entries(result.scores).map(([label, score]) => (
