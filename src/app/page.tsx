@@ -56,6 +56,8 @@ interface ArtistAlbum {
 interface ArtistResult {
   name: string;
   artistId: string;
+  imageUrl?: string;
+  spotifyUrl?: string;
   genres: string[];
   monthlyListeners: string;
   spotifyFollowers?: number;
@@ -362,15 +364,25 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
   return (
     <div className="artist-result-panel">
       <div className="result-header">
-        <div>
-          <span className="eyebrow">Artist Intelligence</span>
-          <h2>{artistResult.name}</h2>
-          <div className="meta">
-            {artistResult.monthlyListeners} • Popularity {artistResult.spotifyPopularity ?? artistResult.energy}/100
-            {artistResult.genres.length ? ` • ${artistResult.genres.join(' • ')}` : ''}
+        <div className="artist-identity">
+          {artistResult.imageUrl ? (
+            <img className="artist-avatar" src={artistResult.imageUrl} alt={`${artistResult.name} Spotify profile`} />
+          ) : (
+            <div className="artist-avatar placeholder" aria-hidden="true">🎤</div>
+          )}
+          <div>
+            <span className="eyebrow">Artist Intelligence</span>
+            <h2>{artistResult.name}</h2>
+            <div className="meta">
+              {artistResult.monthlyListeners} • Popularity {artistResult.spotifyPopularity ?? artistResult.energy}/100
+              {artistResult.genres.length ? ` • ${artistResult.genres.join(' • ')}` : ''}
+            </div>
           </div>
         </div>
-        <div className="mood-pill">{artistResult.mood}</div>
+        <div className="header-actions">
+          {artistResult.spotifyUrl && <a className="profile-link" href={artistResult.spotifyUrl} target="_blank" rel="noopener">Open Spotify</a>}
+          <div className="mood-pill">{artistResult.mood}</div>
+        </div>
       </div>
 
       <p className="summary">{artistResult.summary}</p>
@@ -382,6 +394,8 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
         {artistResult.country && <span>Country: {artistResult.country}</span>}
         {artistResult.careerStage && <span>Stage: {artistResult.careerStage}</span>}
         {artistResult.releaseYears?.[0] && <span>Latest release year: {artistResult.releaseYears[0]}</span>}
+        {artistResult.moods?.slice(0, 4).map((mood) => <span key={`mood-${mood}`}>{titleCase(mood)}</span>)}
+        {artistResult.activities?.slice(0, 4).map((activity) => <span key={`activity-${activity}`}>{titleCase(activity)}</span>)}
       </div>
 
       <div className="stats-grid">
@@ -435,6 +449,7 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
             {artistResult.topTracksDetailed.slice(0, 10).map((track, index) => (
               <a className="track-row" key={track.id || track.name} href={track.url} target="_blank" rel="noopener">
                 <span>{index + 1}</span>
+                {track.imageUrl && <img src={track.imageUrl} alt="" />}
                 <div>
                   <strong>{track.name}</strong>
                   <small>{track.album || track.artists || 'Spotify track'}{track.releaseDate ? ` • ${track.releaseDate}` : ''}</small>
@@ -467,6 +482,7 @@ function ArtistResults({ artistResult }: { artistResult: ArtistResult }) {
           <div className="content-grid">
             {[...(artistResult.socialContent?.topPosts || []), ...(artistResult.socialContent?.topReels || [])].slice(0, 6).map((post, index) => (
               <a className="content-card" key={String(post.url || index)} href={String(post.url || '#')} target="_blank" rel="noopener">
+                {post.thumbnailUrl && <img src={String(post.thumbnailUrl)} alt="" />}
                 <strong>{post.views ? `${formatCompact(post.views as number)} views` : post.likes ? `${formatCompact(post.likes as number)} likes` : 'Instagram post'}</strong>
                 <small>{String(post.caption || post.date || 'Chartmetric social signal').slice(0, 120)}</small>
               </a>
@@ -510,11 +526,20 @@ function Results({ result }: { result: AnalysisResult }) {
   return (
     <section className="panel results">
       <div className="resultHeader">
-        <div>
-          <span className="eyebrow">{result.source === 'audio' ? 'Uploaded audio' : 'Spotify analysis'}</span>
-          <h2>{result.track.title}</h2>
-          <p>{result.track.artist}</p>
+        <div className="track-identity">
+          {result.track.imageUrl && <img className="track-artwork" src={result.track.imageUrl} alt={`${result.track.title} artwork`} />}
+          <div>
+            <span className="eyebrow">{result.source === 'audio' ? 'Uploaded audio' : 'Spotify analysis'}</span>
+            <h2>{result.track.title}</h2>
+            <p>{result.track.artist}</p>
+            {(result.track.album || result.track.releaseDate || result.track.popularity !== undefined) && (
+              <p className="meta">
+                {[result.track.album, result.track.releaseDate, result.track.popularity !== undefined ? `Popularity ${result.track.popularity}/100` : null].filter(Boolean).join(' • ')}
+              </p>
+            )}
+          </div>
         </div>
+        {result.track.spotifyUrl && <a className="profile-link" href={result.track.spotifyUrl} target="_blank" rel="noopener">Open Spotify</a>}
         {result.file && (
           <div className="filePill">{result.file.mimeType || 'audio'} · {result.file.sizeMb}</div>
         )}

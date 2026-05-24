@@ -6,6 +6,11 @@ export interface AnalysisResult {
     title: string;
     artist: string;
     externalId?: string;
+    spotifyUrl?: string;
+    album?: string;
+    releaseDate?: string;
+    imageUrl?: string;
+    popularity?: number;
   };
   file?: {
     mimeType: string;
